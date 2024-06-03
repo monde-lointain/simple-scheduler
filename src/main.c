@@ -1,5 +1,5 @@
-#include "sched.h"
 #include "led.h"
+#include "sched.h"
 
 #include "stm32f4xx.h"
 
@@ -102,9 +102,9 @@ static void initTasks(void)
     {
         u32 *taskSP = tasks[i].sp;
 
-        *--taskSP = 0x1000000U; // xpsr
+        *--taskSP = 0x1000000U;             // xpsr
         *--taskSP = (u32)tasks[i].taskFunc; // lr
-        *--taskSP = EXC_RETURN_THREAD_PSP; // pc
+        *--taskSP = EXC_RETURN_THREAD_PSP;  // pc
 
         // r0 - r12
         for (u32 j = 0; j < 13U; j++)
