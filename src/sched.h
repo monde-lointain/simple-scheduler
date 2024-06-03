@@ -1,29 +1,8 @@
-#include <stdbool.h>
-#include <stdint.h>
+#pragma once
 
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-typedef int8_t s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
-typedef float f32;
-typedef double f64;
+#include "types.h"
 
-typedef volatile uint8_t vu8;
-typedef volatile uint16_t vu16;
-typedef volatile uint32_t vu32;
-typedef volatile uint64_t vu64;
-typedef volatile int8_t vs8;
-typedef volatile int16_t vs16;
-typedef volatile int32_t vs32;
-typedef volatile int64_t vs64;
-typedef volatile float vf32;
-typedef volatile double vf64;
-
-enum TaskID
+typedef enum
 {
 	TASK_IDLE,
 	TASK_1,
@@ -32,7 +11,7 @@ enum TaskID
 	TASK_4,
 
 	TASK_COUNT,
-};
+} TaskID;
 
 typedef enum
 {
@@ -44,7 +23,7 @@ typedef enum
 
 typedef struct
 {
-	u32 sp;
+	u32 *sp;
 	u32 blockCount;
 	TaskStatus status;
 	void (*taskFunc)(void);
@@ -52,8 +31,8 @@ typedef struct
 
 #define KILOBYTES(n) ((n) * 1024U)
 
-#define DEFAULT_STACK_SIZE (KILOBYTES(1))
-#define SRAM_SIZE (KILOBYTES(128))
+#define DEFAULT_STACK_SIZE (KILOBYTES(1U))
+#define SRAM_SIZE (KILOBYTES(128U))
 
 #define SRAM_END (SRAM1_BASE + SRAM_SIZE)
 
@@ -64,7 +43,7 @@ typedef struct
 #define IDLE_STACK_BASE (T4_STACK_BASE - DEFAULT_STACK_SIZE)
 #define SCHED_STACK_BASE (IDLE_STACK_BASE - DEFAULT_STACK_SIZE)
 
-#define HSI_CLOCK (16000000UL)
+#define HSI_CLOCK (16000000U)
 #define SYSTICK_TIM_CLK HSI_CLOCK
 
 void idle(void);

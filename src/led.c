@@ -1,14 +1,18 @@
-static void ledOn(u32 pin)
+#include "led.h"
+
+#include "stm32f4xx.h"
+
+void ledOn(register u32 pin)
 {
     SET_BIT(GPIOD->ODR, 1UL << pin);
 }
 
-static void ledOff(u32 pin)
+void ledOff(register u32 pin)
 {
     CLEAR_BIT(GPIOD->ODR, 1UL << pin);
 }
 
-static void ledInitAll(void)
+void ledInitAll(void)
 {
     SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPIODEN_Msk);
 

@@ -1,26 +1,24 @@
+#include "sched.h"
+#include "led.h"
+
 #include "stm32f4xx.h"
 
-#include "led.h"
-#include "sched.h"
-
-#include "led.c"
-
-#define WRAP_INC(n, max) ((n) = (++(n) == (max)) ? 0 : (n))
+#define WRAP_INC(n, max) ((n) = (++(n) == (max)) ? 0U : (n))
 
 // clang-format off
-Task tasks[TASK_COUNT] =
+static Task tasks[TASK_COUNT] =
 {
   //      sp         block count      status         proc
-    {IDLE_STACK_BASE,    0,      TASK_STATUS_READY, &idle},
-    {T1_STACK_BASE,      0,      TASK_STATUS_READY, &task1},
-    {T2_STACK_BASE,      0,      TASK_STATUS_READY, &task2},
-    {T3_STACK_BASE,      0,      TASK_STATUS_READY, &task3},
-    {T4_STACK_BASE,      0,      TASK_STATUS_READY, &task4},
+    {(u32 *)IDLE_STACK_BASE,    0U,     TASK_STATUS_READY, &idle},
+    {(u32 *)T1_STACK_BASE,      0U,     TASK_STATUS_READY, &task1},
+    {(u32 *)T2_STACK_BASE,      0U,     TASK_STATUS_READY, &task2},
+    {(u32 *)T3_STACK_BASE,      0U,     TASK_STATUS_READY, &task3},
+    {(u32 *)T4_STACK_BASE,      0U,     TASK_STATUS_READY, &task4},
 };
-u32 currentTask = TASK_1;
+static u32 currentTask = TASK_1;
 // clang-format on
 
-u32 gTickCount = 0;
+static u32 gTickCount = 0;
 
 static void enableProcessorFaults(void)
 {
@@ -29,30 +27,33 @@ static void enableProcessorFaults(void)
     SET_BIT(SCB->SHCSR, SCB_SHCSR_USGFAULTENA_Msk);
 }
 
-u32 getPSPValue(void)
+u32 *getPSPValue(void);
+u32 *getPSPValue(void)
 {
     return tasks[currentTask].sp;
 }
 
-void storePSPValue(u32 currStackBase)
+void storePSPValue(u32 *currStackBase);
+void storePSPValue(u32 *currStackBase)
 {
     tasks[currentTask].sp = currStackBase;
 }
 
+void updateNextTask(void);
 void updateNextTask(void)
 {
     // Search for a task that is ready
-    for (u32 i = 0; i < TASK_COUNT; i++)
+    for (u32 i = 0; i < (u32)TASK_COUNT; i++)
     {
-        WRAP_INC(currentTask, TASK_COUNT);
-        if ((tasks[currentTask].status == TASK_STATUS_READY) && (currentTask != TASK_IDLE))
+        currentTask = (currentTask + 1) % (u32)TASK_COUNT;
+        if ((tasks[currentTask].status == TASK_STATUS_READY) && (currentTask != (u32)TASK_IDLE))
         {
             return;
         }
     }
 
     // If no tasks found
-    currentTask = TASK_IDLE;
+    currentTask = (u32)TASK_IDLE;
 }
 
 static void initSchedulerStack(u32 stackBase)
@@ -63,6 +64,7 @@ static void initSchedulerStack(u32 stackBase)
 static void schedule(void)
 {
     SET_BIT(SCB->ICSR, SCB_ICSR_PENDSVSET_Msk);
+    __ISB();
 }
 
 static void taskDelay(u32 tickCount)
@@ -71,7 +73,7 @@ static void taskDelay(u32 tickCount)
     u32 primask = __get_PRIMASK();
     __set_PRIMASK(1);
 
-    if (currentTask != TASK_IDLE)
+    if (currentTask != (u32)TASK_IDLE)
     {
         tasks[currentTask].blockCount = gTickCount + tickCount;
         tasks[currentTask].status = TASK_STATUS_BLOCKED;
@@ -83,7 +85,7 @@ static void taskDelay(u32 tickCount)
 
 static void unblockTasks(void)
 {
-    for (u32 i = TASK_1; i < TASK_COUNT; i++)
+    for (u32 i = TASK_1; i < (u32)TASK_COUNT; i++)
     {
         Task *task = &tasks[i];
         if ((task->blockCount == gTickCount) && (task->status != TASK_STATUS_READY))
@@ -96,21 +98,21 @@ static void unblockTasks(void)
 static void initTasks(void)
 {
     // Set up stack frame for each task
-    for (u32 i = 0; i < TASK_COUNT; i++)
+    for (register u32 i = 0; i < (u32)TASK_COUNT; i++)
     {
-        u32 *sp = (u32 *)tasks[i].sp;
+        u32 *taskSP = tasks[i].sp;
 
-        *--sp = 0x1000000U;             // xpsr
-        *--sp = (u32)tasks[i].taskFunc; // lr
-        *--sp = EXC_RETURN_THREAD_PSP;  // pc
+        *--taskSP = 0x1000000U; // xpsr
+        *--taskSP = (u32)tasks[i].taskFunc; // lr
+        *--taskSP = EXC_RETURN_THREAD_PSP; // pc
 
         // r0 - r12
-        for (u32 j = 0; j < 13; j++)
+        for (u32 j = 0; j < 13U; j++)
         {
-            *--sp = 0;
+            *--taskSP = 0U;
         }
 
-        tasks[i].sp = (u32)sp;
+        tasks[i].sp = taskSP;
     }
 }
 
@@ -129,7 +131,7 @@ static void initTimer(u32 tickHz)
     SET_BIT(SysTick->CTRL, SysTick_CTRL_ENABLE_Msk);
 }
 
-__attribute__((naked)) void switchSPToPSP(void)
+static __attribute__((naked)) void switchSPToPSP(void)
 {
     __ASM volatile("push {lr}       \n\t"
                    "bl getPSPValue  \n\t" // Get current PSP address and store in r0
@@ -140,37 +142,51 @@ __attribute__((naked)) void switchSPToPSP(void)
                    "bx lr");
 }
 
-static void ledMain(u32 pin, u32 toggleFreq)
+void task1(void)
 {
     while (true)
     {
-        ledOn(pin);
-        taskDelay(toggleFreq);
-        ledOff(pin);
-        taskDelay(toggleFreq);
+        ledOn(LED_GREEN);
+        taskDelay(1000);
+        ledOff(LED_GREEN);
+        taskDelay(1000);
     }
-}
-
-void task1(void)
-{
-    ledMain(LED_GREEN, 1000);
 }
 
 void task2(void)
 {
-    ledMain(LED_ORANGE, 500);
+    while (true)
+    {
+        ledOn(LED_ORANGE);
+        taskDelay(500);
+        ledOff(LED_ORANGE);
+        taskDelay(500);
+    }
 }
 
 void task3(void)
 {
-    ledMain(LED_BLUE, 250);
+    while (true)
+    {
+        ledOn(LED_BLUE);
+        taskDelay(250);
+        ledOff(LED_BLUE);
+        taskDelay(250);
+    }
 }
 
 void task4(void)
 {
-    ledMain(LED_RED, 125);
+    while (true)
+    {
+        ledOn(LED_RED);
+        taskDelay(125);
+        ledOff(LED_RED);
+        taskDelay(125);
+    }
 }
 
+int main(void);
 int main(void)
 {
     enableProcessorFaults();
@@ -186,8 +202,13 @@ int main(void)
     switchSPToPSP();
 
     task1();
+
+    while (true)
+    {
+    }
 }
 
+void SysTick_Handler(void);
 void SysTick_Handler(void)
 {
     gTickCount++;
@@ -195,6 +216,7 @@ void SysTick_Handler(void)
     schedule();
 }
 
+__attribute__((naked)) void PendSV_Handler(void);
 __attribute__((naked)) void PendSV_Handler(void)
 {
     __ASM volatile("mrs r0, psp         \n\t" // Retrieve current PSP and
